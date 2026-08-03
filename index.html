@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="相対売り損益検証">
+<meta name="theme-color" content="#1f6aa5">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231f6aa5'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='sans-serif'%3E%C2%A5%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231f6aa5'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='sans-serif'%3E%C2%A5%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="./manifest.json">
+<title>相対売り 損益検証ツール</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #eef1f4;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    color: #1a1a1a;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .container { max-width: 520px; margin: 0 auto; padding: 12px 12px 48px; }
+  h1 { font-size: 17px; margin: 8px 4px 12px; }
+  .card {
+    background: #fff; border-radius: 14px; padding: 14px 14px 16px;
+    margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .card h2 { font-size: 14px; margin: 0 0 4px; color: #333; }
+  .caption { font-size: 12px; color: #777; margin: 0 0 10px; line-height: 1.4; }
+  .field { margin-bottom: 10px; }
+  .field:last-child { margin-bottom: 0; }
+  label { display: block; font-size: 13px; color: #444; margin-bottom: 4px; }
+  input[type="text"], select {
+    width: 100%; font-size: 16px; padding: 10px 10px; border: 1px solid #ccd2d8;
+    border-radius: 9px; background: #fbfcfd; color: #1a1a1a;
+  }
+  input[type="text"]:focus, select:focus { outline: 2px solid #1f6aa5; border-color: #1f6aa5; }
+  .amount-row { display: flex; gap: 8px; }
+  .amount-row input { flex: 1 1 auto; min-width: 0; }
+  .amount-row select { flex: 0 0 84px; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 > .field { flex: 1 1 0; }
+  .btn {
+    -webkit-appearance: none; appearance: none; border: none; border-radius: 9px;
+    font-size: 14px; font-weight: 600; padding: 11px 10px; min-height: 44px;
+    cursor: pointer;
+  }
+  .btn-primary { background: #1f6aa5; color: #fff; }
+  .btn-neutral { background: #e4e8eb; color: #222; }
+  .btn-danger { background: #e53935; color: #fff; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .btn-row .btn { flex: 1 1 auto; }
+  .result-line { font-size: 13.5px; color: #333; margin: 6px 0 0; line-height: 1.5; }
+  .result-line.warn { color: #b45309; }
+  .price-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 9px 0; border-bottom: 1px solid #eef0f2; font-size: 14px;
+  }
+  .price-row:last-child { border-bottom: none; }
+  .price-row .price { color: #444; }
+  .price-row .profit { font-weight: 700; }
+  .price-row.profit-pos .profit { color: #1e8e3e; }
+  .price-row.profit-neg .profit { color: #d33; }
+  .price-sub { font-size: 11.5px; color: #888; margin-top: 2px; }
+  .error-banner {
+    display: none; background: #fff3e0; color: #a35a00; border: 1px solid #ffcc80;
+    border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px;
+  }
+  .error-banner.show { display: block; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: #222; color: #fff; padding: 9px 16px; border-radius: 20px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.25s;
+    max-width: 90vw; text-align: center; z-index: 50;
+  }
+  .toast.show { opacity: 0.95; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>相対売り 損益検証ツール（WEB版）</h1>
+
+  <div id="errorBanner" class="error-banner"></div>
+
+  <div class="card">
+    <h2>品名・記録</h2>
+    <div class="row2">
+      <div class="field">
+        <label>品名</label>
+        <input type="text" id="recordName" placeholder="例: サバ">
+      </div>
+      <div class="field">
+        <label>条件</label>
+        <input type="text" id="recordCondition" placeholder="例: 12月A社向け">
+      </div>
+    </div>
+    <div class="field">
+      <label>呼び出す記録</label>
+      <select id="recordSelect"><option value="">(記録なし)</option></select>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-neutral" id="clearBtn">クリア</button>
+      <button class="btn btn-primary" id="saveRecordBtn">この内容を保存</button>
+      <button class="btn btn-danger" id="deleteRecordBtn">削除</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>単位換算</h2>
+    <p class="caption">ケースの中身をkgに換算します（kgのみで使うなら不要）</p>
+    <div class="field">
+      <label>ケースの換算方法</label>
+      <select id="caseMode">
+        <option value="direct">kgで直接</option>
+        <option value="frombags">袋数から算出</option>
+      </select>
+    </div>
+    <div id="caseDirectFields" class="field">
+      <label>1ケースあたり(kg)</label>
+      <input type="text" inputmode="decimal" id="caseKgDirect" value="0">
+    </div>
+    <div id="caseFromBagsFields" style="display:none;">
+      <div class="row2">
+        <div class="field">
+          <label>1袋あたり(kg)</label>
+          <input type="text" inputmode="decimal" id="bagKg" value="0">
+        </div>
+        <div class="field">
+          <label>1ケースあたり(袋)</label>
+          <input type="text" inputmode="decimal" id="caseBags" value="0">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>基本項目</h2>
+    <div class="field">
+      <label>仕入値</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="purchaseValue" value="0">
+        <select id="purchaseUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>運賃</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="freightValue" value="0">
+        <select id="freightUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>労務費</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="laborValue" value="0">
+        <select id="laborUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>箱代</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="boxValue" value="0">
+        <select id="boxUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>センターフィ（売値税抜比、%）</label>
+      <input type="text" inputmode="decimal" id="centerFee" value="0">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>保管・付帯費用</h2>
+    <p class="caption">倉賃は半月ごとに加算／入出庫料金・グレース料・凍結料は発生時1回のみ</p>
+    <div class="field">
+      <label>倉賃（半月単価）</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="storageRateValue" value="0">
+        <select id="storageRateUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>入出庫料金</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="handlingValue" value="0">
+        <select id="handlingUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>グレース料</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="graceValue" value="0">
+        <select id="graceUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>凍結料</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="freezeValue" value="0">
+        <select id="freezeUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <div class="field">
+      <label>保有月数</label>
+      <input type="text" inputmode="decimal" id="holdingMonths" value="0">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>単価シミュレーション設定</h2>
+    <div class="row2">
+      <div class="field">
+        <label>表示単位</label>
+        <select id="displayUnit"><option value="kg">kg</option><option value="bag">袋</option><option value="case">ケース</option></select>
+      </div>
+      <div class="field">
+        <label>ケース数</label>
+        <input type="text" inputmode="decimal" id="caseCount" value="1">
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>開始単価(円)</label>
+        <input type="text" inputmode="decimal" id="startPrice" value="0">
+      </div>
+      <div class="field">
+        <label>刻み(円)</label>
+        <input type="text" inputmode="decimal" id="priceStep" value="10">
+      </div>
+    </div>
+    <div class="field">
+      <label>目標利益率(%)</label>
+      <input type="text" inputmode="decimal" id="targetRate" value="5">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>参考情報</h2>
+    <p class="result-line" id="breakevenLine"></p>
+    <p class="result-line" id="targetRateLine"></p>
+    <p class="result-line" id="holdingNoteLine"></p>
+  </div>
+
+  <div class="card">
+    <h2>単価別 利益一覧（15件）</h2>
+    <div id="priceList"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------------
+  // 計算ロジック（calc.py の移植。ロジックはあちらと1対1で対応させてある）
+  // ------------------------------------------------------------------
+  const UNIT_KG = "kg", UNIT_BAG = "bag", UNIT_CASE = "case";
+  const ZEN_TO_HAN = { "０":"0","１":"1","２":"2","３":"3","４":"4","５":"5","６":"6","７":"7","８":"8","９":"9","．":".","，":"," };
+
+  class InputError extends Error {}
+
+  function parseNumber(text, fieldName) {
+    let t = String(text == null ? "" : text).replace(/[０-９．，]/g, (ch) => ZEN_TO_HAN[ch] || ch).replace(/,/g, "").trim();
+    if (!t) return 0;
+    const n = Number(t);
+    if (Number.isNaN(n)) throw new InputError(fieldName + "に数値を入力してください");
+    return n;
+  }
+
+  function convertToPerKg(value, unit, fieldName, bagKg, caseKg) {
+    if (unit === UNIT_KG) return value;
+    if (unit === UNIT_BAG) {
+      if (bagKg <= 0) throw new InputError(fieldName + "を袋単位で計算するには「1袋あたりの内容量(kg)」を入力してください");
+      return value / bagKg;
+    }
+    if (unit === UNIT_CASE) {
+      if (caseKg <= 0) throw new InputError(fieldName + "をケース単位で計算するには「1ケースあたりの内容量(kg)」の換算を入力してください");
+      return value / caseKg;
+    }
+    throw new InputError("不明な単位です: " + unit);
+  }
+
+  function convertFromPerKg(valuePerKg, unit, bagKg, caseKg) {
+    if (unit === UNIT_KG) return valuePerKg;
+    if (unit === UNIT_BAG) return valuePerKg * bagKg;
+    if (unit === UNIT_CASE) return valuePerKg * caseKg;
+    throw new InputError("不明な単位です: " + unit);
+  }
+
+  function halfMonthUnits(holdingMonths) {
+    if (holdingMonths <= 0) return 0;
+    const rounded = Math.round(holdingMonths * 2 * 1e6) / 1e6;
+    return Math.ceil(rounded - 1e-9);
+  }
+
+  function calculate(p) {
+    const centerFee = p.sell * p.centerFeePct / 100;
+    const storage = p.storageRate * halfMonthUnits(p.holdingMonths);
+    const fixedExclStorage = p.purchase + p.freight + p.labor + p.box + centerFee + p.handling + p.grace + p.freeze;
+    const profitBeforeStorage = p.sell - fixedExclStorage;
+    const profit = profitBeforeStorage - storage;
+    const profitRate = p.sell ? profit / p.sell : null;
+    return { profit: profit, profitRate: profitRate, profitBeforeStorage: profitBeforeStorage };
+  }
+
+  function breakevenSellPrice(p) {
+    const feeRatio = p.centerFeePct / 100;
+    if (feeRatio >= 1) return null;
+    const fixedCosts = p.purchase + p.freight + p.labor + p.box + p.handling + p.grace + p.freeze + p.storage;
+    return fixedCosts / (1 - feeRatio);
+  }
+
+  function sellPriceForTargetRate(p) {
+    const feeRatio = p.centerFeePct / 100;
+    const denom = 1 - feeRatio - p.targetRate;
+    if (denom <= 0) return null;
+    const fixedCosts = p.purchase + p.freight + p.labor + p.box + p.handling + p.grace + p.freeze + p.storage;
+    return fixedCosts / denom;
+  }
+
+  function breakevenHoldingMonths(profitBeforeStorage, storageRate) {
+    if (storageRate <= 0) return null;
+    if (profitBeforeStorage <= 0) return 0;
+    const units = Math.floor(profitBeforeStorage / storageRate + 1e-9);
+    return units / 2;
+  }
+
+  // ------------------------------------------------------------------
+  // DOM ヘルパー
+  // ------------------------------------------------------------------
+  const $ = (id) => document.getElementById(id);
+  const ROW_COUNT = 15;
+  const UNIT_LABEL = { kg: "kg", bag: "袋", case: "ケース" };
+
+  const SIMPLE_FIELDS = ["caseKgDirect", "bagKg", "caseBags", "centerFee", "holdingMonths",
+                          "startPrice", "priceStep", "targetRate", "caseCount"];
+  const AMOUNT_FIELDS = ["purchase", "freight", "labor", "box", "storageRate", "handling", "grace", "freeze"];
+
+  const STORAGE_KEY = "aitaiUriCalc.lastInput";
+  const RECORDS_KEY = "aitaiUriCalc.records";
+
+  function fmt(n, digits) {
+    return Number(n).toLocaleString("ja-JP", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  }
+
+  function showError(msg) {
+    const el = $("errorBanner");
+    if (msg) { el.textContent = msg; el.classList.add("show"); }
+    else { el.textContent = ""; el.classList.remove("show"); }
+  }
+
+  let toastTimer = null;
+  function showToast(msg) {
+    const el = $("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+  }
+
+  // ------------------------------------------------------------------
+  // 設定の収集・反映（前回入力値の自動保存/復元、品名付き記録に共用）
+  // ------------------------------------------------------------------
+  function collectSettings() {
+    const data = {
+      caseMode: $("caseMode").value,
+      displayUnit: $("displayUnit").value,
+      fields: {},
+      amountFields: {},
+    };
+    SIMPLE_FIELDS.forEach((name) => { data.fields[name] = $(name).value; });
+    AMOUNT_FIELDS.forEach((name) => {
+      data.amountFields[name] = { value: $(name + "Value").value, unit: $(name + "Unit").value };
+    });
+    return data;
+  }
+
+  function applySettings(data) {
+    if (!data) return;
+    try {
+      if (data.caseMode === "direct" || data.caseMode === "frombags") {
+        $("caseMode").value = data.caseMode;
+        onCaseModeChange();
+      }
+      if (data.displayUnit && UNIT_LABEL[data.displayUnit]) {
+        $("displayUnit").value = data.displayUnit;
+      }
+      const fields = data.fields || {};
+      SIMPLE_FIELDS.forEach((name) => {
+        if (fields[name] !== undefined && $(name)) $(name).value = fields[name];
+      });
+      const amountFields = data.amountFields || {};
+      AMOUNT_FIELDS.forEach((name) => {
+        const entry = amountFields[name];
+        if (!entry) return;
+        if (entry.value !== undefined) $(name + "Value").value = entry.value;
+        if (entry.unit && UNIT_LABEL[entry.unit]) $(name + "Unit").value = entry.unit;
+      });
+    } catch (e) {
+      // 保存データが壊れていても起動は継続する
+    }
+  }
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      applySettings(JSON.parse(raw));
+    } catch (e) { /* 無視 */ }
+  }
+
+  function saveSettings() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(collectSettings())); } catch (e) { /* 無視 */ }
+  }
+
+  function loadRecords() {
+    try {
+      const raw = localStorage.getItem(RECORDS_KEY);
+      const data = raw ? JSON.parse(raw) : [];
+      return Array.isArray(data) ? data : [];
+    } catch (e) { return []; }
+  }
+
+  function saveRecords(records) {
+    try { localStorage.setItem(RECORDS_KEY, JSON.stringify(records)); } catch (e) { /* 無視 */ }
+  }
+
+  function recordLabel(name, condition) {
+    return condition ? (name + "（" + condition + "）") : name;
+  }
+
+  function refreshRecordMenu(selectLabel) {
+    const records = loadRecords();
+    const select = $("recordSelect");
+    select.innerHTML = "";
+    if (records.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = ""; opt.textContent = "(記録なし)";
+      select.appendChild(opt);
+      return;
+    }
+    records.forEach((r) => {
+      const opt = document.createElement("option");
+      opt.value = r.label; opt.textContent = r.label;
+      select.appendChild(opt);
+    });
+    if (selectLabel && records.some((r) => r.label === selectLabel)) {
+      select.value = selectLabel;
+    }
+  }
+
+  function onSaveRecord() {
+    const name = $("recordName").value.trim();
+    const condition = $("recordCondition").value.trim();
+    if (!name) { showError("記録として保存するには品名を入力してください"); return; }
+    const label = recordLabel(name, condition);
+    let records = loadRecords().filter((r) => r.label !== label);
+    records.push({ label: label, name: name, condition: condition, data: collectSettings() });
+    saveRecords(records);
+    refreshRecordMenu(label);
+    showError("");
+    showToast("「" + label + "」として保存しました");
+  }
+
+  function onLoadRecord() {
+    const label = $("recordSelect").value;
+    if (!label) return;
+    const record = loadRecords().find((r) => r.label === label);
+    if (!record) return;
+    applySettings(record.data || {});
+    $("recordName").value = record.name || "";
+    $("recordCondition").value = record.condition || "";
+    showToast("「" + label + "」を呼び出しました");
+    recalculate();
+  }
+
+  function onDeleteRecord() {
+    const label = $("recordSelect").value;
+    if (!label) return;
+    const records = loadRecords().filter((r) => r.label !== label);
+    saveRecords(records);
+    refreshRecordMenu();
+    showToast("「" + label + "」を削除しました");
+  }
+
+  function onClear() {
+    SIMPLE_FIELDS.forEach((name) => { $(name).value = ""; });
+    AMOUNT_FIELDS.forEach((name) => { $(name + "Value").value = ""; });
+    $("recordName").value = "";
+    $("recordCondition").value = "";
+    showError("");
+    recalculate();
+  }
+
+  // ------------------------------------------------------------------
+  // ケース換算モードの表示切替
+  // ------------------------------------------------------------------
+  function onCaseModeChange() {
+    const mode = $("caseMode").value;
+    $("caseDirectFields").style.display = mode === "direct" ? "" : "none";
+    $("caseFromBagsFields").style.display = mode === "frombags" ? "" : "none";
+  }
+
+  // ------------------------------------------------------------------
+  // 入力読み取り
+  // ------------------------------------------------------------------
+  function readConversion() {
+    if ($("caseMode").value === "direct") {
+      const caseKg = parseNumber($("caseKgDirect").value, "1ケースあたりの内容量(kg)");
+      if (caseKg < 0) throw new InputError("換算値に負の値は入力できません");
+      return { bagKg: 0, caseKg: caseKg };
+    }
+    const bagKg = parseNumber($("bagKg").value, "1袋あたりの内容量(kg)");
+    const caseBags = parseNumber($("caseBags").value, "1ケースあたりの袋数");
+    if (bagKg < 0 || caseBags < 0) throw new InputError("換算値に負の値は入力できません");
+    return { bagKg: bagKg, caseKg: bagKg * caseBags };
+  }
+
+  function readAmountKg(name, fieldName, bagKg, caseKg) {
+    const raw = parseNumber($(name + "Value").value, fieldName);
+    if (raw < 0) throw new InputError(fieldName + "に負の値は入力できません");
+    return convertToPerKg(raw, $(name + "Unit").value, fieldName, bagKg, caseKg);
+  }
+
+  function readCosts() {
+    const conv = readConversion();
+    const centerFeePct = parseNumber($("centerFee").value, "センターフィ");
+    if (centerFeePct < 0 || centerFeePct > 100) throw new InputError("センターフィは0〜100の範囲で入力してください");
+    const holdingMonths = parseNumber($("holdingMonths").value, "保有月数");
+    if (holdingMonths < 0) throw new InputError("保有月数に負の値は入力できません");
+
+    return {
+      bagKg: conv.bagKg,
+      caseKg: conv.caseKg,
+      purchase: readAmountKg("purchase", "仕入値", conv.bagKg, conv.caseKg),
+      freight: readAmountKg("freight", "運賃", conv.bagKg, conv.caseKg),
+      labor: readAmountKg("labor", "労務費", conv.bagKg, conv.caseKg),
+      box: readAmountKg("box", "箱代", conv.bagKg, conv.caseKg),
+      centerFeePct: centerFeePct,
+      handling: readAmountKg("handling", "入出庫料金", conv.bagKg, conv.caseKg),
+      grace: readAmountKg("grace", "グレース料", conv.bagKg, conv.caseKg),
+      freeze: readAmountKg("freeze", "凍結料", conv.bagKg, conv.caseKg),
+      storageRate: readAmountKg("storageRate", "倉賃(半月単価)", conv.bagKg, conv.caseKg),
+      holdingMonths: holdingMonths,
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // 再計算・描画
+  // ------------------------------------------------------------------
+  function recalculate() {
+    const priceList = $("priceList");
+    priceList.innerHTML = "";
+
+    let costs;
+    try {
+      costs = readCosts();
+    } catch (e) {
+      if (e instanceof InputError) {
+        showError(e.message);
+        $("breakevenLine").textContent = "";
+        $("holdingNoteLine").textContent = "";
+        return;
+      }
+      throw e;
+    }
+    showError("");
+
+    const storage = costs.storageRate * halfMonthUnits(costs.holdingMonths);
+    const displayUnit = $("displayUnit").value;
+    const displayLabel = UNIT_LABEL[displayUnit];
+
+    const breakevenPerKg = breakevenSellPrice({
+      purchase: costs.purchase, freight: costs.freight, labor: costs.labor, box: costs.box,
+      centerFeePct: costs.centerFeePct, handling: costs.handling, grace: costs.grace,
+      freeze: costs.freeze, storage: storage,
+    });
+    if (breakevenPerKg === null) {
+      $("breakevenLine").textContent = "参考: センターフィが100%以上のため損益分岐単価を計算できません";
+    } else {
+      const breakevenDisplay = convertFromPerKg(breakevenPerKg, displayUnit, costs.bagKg, costs.caseKg);
+      $("breakevenLine").textContent = "参考: 損益分岐単価 " + fmt(breakevenPerKg, 2) + " 円/kg（" +
+        fmt(breakevenDisplay, 2) + " 円/" + displayLabel + " 相当）";
+    }
+
+    let start, step;
+    try {
+      start = parseNumber($("startPrice").value, "開始単価");
+      step = parseNumber($("priceStep").value, "刻み");
+    } catch (e) {
+      if (e instanceof InputError) { showError(e.message); return; }
+      throw e;
+    }
+
+    try {
+      const targetRatePct = parseNumber($("targetRate").value, "目標利益率");
+      const minPricePerKg = sellPriceForTargetRate({
+        purchase: costs.purchase, freight: costs.freight, labor: costs.labor, box: costs.box,
+        centerFeePct: costs.centerFeePct, handling: costs.handling, grace: costs.grace,
+        freeze: costs.freeze, storage: storage, targetRate: targetRatePct / 100,
+      });
+      if (minPricePerKg === null) {
+        $("targetRateLine").textContent = "目標利益率が高すぎて計算できません（センターフィ%との合計が100%以上）";
+      } else {
+        const minPriceDisplay = convertFromPerKg(minPricePerKg, displayUnit, costs.bagKg, costs.caseKg);
+        const room = start - minPriceDisplay;
+        const roomText = room >= 0
+          ? ("開始単価からあと " + fmt(room, 2) + " 円/" + displayLabel + " 下げられます")
+          : "開始単価では目標利益率に届いていません";
+        $("targetRateLine").textContent = "目標" + targetRatePct.toFixed(1) + "%を守れる最低単価: " +
+          fmt(minPriceDisplay, 2) + " 円/" + displayLabel + "（" + roomText + "）";
+      }
+    } catch (e) {
+      if (e instanceof InputError) { $("targetRateLine").textContent = ""; } else { throw e; }
+    }
+
+    let caseCount;
+    try { caseCount = parseNumber($("caseCount").value, "ケース数"); } catch (e) { caseCount = 0; }
+    const showTotals = caseCount > 0 && costs.caseKg > 0;
+    const totalKg = showTotals ? caseCount * costs.caseKg : 0;
+
+    let holdingNoteSet = false;
+    for (let i = 0; i < ROW_COUNT; i++) {
+      const priceDisplay = start + step * i;
+      let pricePerKg;
+      try {
+        pricePerKg = convertToPerKg(priceDisplay, displayUnit, "単価", costs.bagKg, costs.caseKg);
+      } catch (e) {
+        if (e instanceof InputError) { showError(e.message); return; }
+        throw e;
+      }
+
+      const result = calculate({
+        sell: pricePerKg, purchase: costs.purchase, freight: costs.freight, labor: costs.labor,
+        box: costs.box, centerFeePct: costs.centerFeePct, handling: costs.handling,
+        grace: costs.grace, freeze: costs.freeze, storageRate: costs.storageRate,
+        holdingMonths: costs.holdingMonths,
+      });
+      const profitDisplay = convertFromPerKg(result.profit, displayUnit, costs.bagKg, costs.caseKg);
+      const rateText = result.profitRate === null ? "---" : (result.profitRate * 100).toFixed(1) + " %";
+
+      if (!holdingNoteSet) {
+        holdingNoteSet = true;
+        const beMonths = breakevenHoldingMonths(result.profitBeforeStorage, costs.storageRate);
+        if (beMonths === null) {
+          $("holdingNoteLine").textContent = "倉賃が0円のため、保有月数による損益分岐はありません";
+        } else if (beMonths <= 0) {
+          $("holdingNoteLine").textContent = "一番上の単価では、倉賃を計算する前からすでに赤字です";
+        } else {
+          $("holdingNoteLine").textContent = "一番上の単価の場合: 保有" + beMonths.toFixed(1) +
+            "ヶ月まで黒字（倉賃のみを理由とした分岐、以降は赤字）";
+        }
+      }
+
+      const row = document.createElement("div");
+      row.className = "price-row " + (result.profit >= 0 ? "profit-pos" : "profit-neg");
+      const main = document.createElement("div");
+      main.innerHTML =
+        '<span class="price">' + fmt(priceDisplay, 2) + " 円/" + displayLabel + "</span>";
+      const right = document.createElement("div");
+      right.style.textAlign = "right";
+      let rightHtml = '<span class="profit">' + fmt(profitDisplay, 2) + " 円</span> ・ " + rateText;
+      right.innerHTML = rightHtml;
+
+      row.appendChild(main);
+      row.appendChild(right);
+
+      if (showTotals) {
+        const sub = document.createElement("div");
+        sub.className = "price-sub";
+        sub.style.width = "100%";
+        const totalRevenue = pricePerKg * totalKg;
+        const totalProfit = result.profit * totalKg;
+        sub.textContent = "総売上 " + fmt(totalRevenue, 0) + " 円 ・ 総利益 " + fmt(totalProfit, 0) +
+          " 円（" + fmt(caseCount, 0).replace(/\.00$/, "") + "ケース）";
+        const wrap = document.createElement("div");
+        wrap.style.width = "100%";
+        wrap.appendChild(row);
+        wrap.appendChild(sub);
+        wrap.style.borderBottom = row.style.borderBottom;
+        priceList.appendChild(wrap);
+        row.style.borderBottom = "none";
+        continue;
+      }
+
+      priceList.appendChild(row);
+    }
+
+    saveSettings();
+  }
+
+  // ------------------------------------------------------------------
+  // イベント配線
+  // ------------------------------------------------------------------
+  function attachRecalcListeners() {
+    const ids = SIMPLE_FIELDS
+      .concat(AMOUNT_FIELDS.map((n) => n + "Value"))
+      .concat(AMOUNT_FIELDS.map((n) => n + "Unit"))
+      .concat(["displayUnit"]);
+    ids.forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener("input", recalculate);
+      el.addEventListener("change", recalculate);
+      if (el.tagName === "INPUT") {
+        el.addEventListener("focus", () => el.select());
+      }
+    });
+    $("caseMode").addEventListener("change", () => { onCaseModeChange(); recalculate(); });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    attachRecalcListeners();
+    $("clearBtn").addEventListener("click", onClear);
+    $("saveRecordBtn").addEventListener("click", onSaveRecord);
+    $("deleteRecordBtn").addEventListener("click", onDeleteRecord);
+    $("recordSelect").addEventListener("change", onLoadRecord);
+    ["recordName", "recordCondition"].forEach((id) => $(id).addEventListener("focus", () => $(id).select()));
+
+    onCaseModeChange();
+    refreshRecordMenu();
+    loadSettings();
+    recalculate();
+
+    // Service Workerを登録し、1回ネットで開けば以降は電波が無くても起動できるようにする。
+    // file://直接開いた場合は登録自体が失敗するだけなので、そのままフォールバックして問題ない。
+    if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register("./sw.js").catch(() => { /* オフライン化なしでも動作は継続する */ });
+    }
+  });
+})();
+</script>
+</body>
+</html>

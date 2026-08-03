@@ -1,0 +1,13 @@
+{
+  "name": "相対売り 損益検証ツール",
+  "short_name": "損益検証",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef1f4",
+  "theme_color": "#1f6aa5",
+  "lang": "ja",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
