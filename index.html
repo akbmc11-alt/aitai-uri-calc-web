@@ -29,6 +29,17 @@
   }
   .card h2 { font-size: 14px; margin: 0 0 4px; color: #333; }
   .caption { font-size: 12px; color: #777; margin: 0 0 10px; line-height: 1.4; }
+  .wc-details > summary {
+    font-size: 14px; font-weight: 600; color: #333; cursor: pointer;
+    list-style: none; display: flex; justify-content: space-between; align-items: center;
+  }
+  .wc-details > summary::-webkit-details-marker { display: none; }
+  .wc-details > summary .chevron {
+    width: 9px; height: 9px; border-right: 2px solid #999; border-bottom: 2px solid #999;
+    transform: rotate(-45deg); transition: transform 0.15s; flex: none; margin-left: 8px;
+  }
+  .wc-details[open] > summary .chevron { transform: rotate(45deg); }
+  .wc-details > summary + .caption { margin-top: 10px; }
   .field { margin-bottom: 10px; }
   .field:last-child { margin-bottom: 0; }
   label { display: block; font-size: 13px; color: #444; margin-bottom: 4px; }
@@ -135,8 +146,8 @@
     </div>
   </div>
 
-  <div class="card">
-    <h2>仕入単価の計量補正（任意）</h2>
+  <details class="card wc-details" id="wcDetails">
+    <summary>計量補正（伝票と実重量が違うとき）<span class="chevron" aria-hidden="true"></span></summary>
     <p class="caption">伝票の数量・単価と、実際に計量し直した重量から実質的な仕入単価を計算します。例: 30.5kg 500円/kgで仕入れ、計量し直すと32kgだった → 実質仕入単価は500円より安くなる</p>
     <div class="row2">
       <div class="field">
@@ -156,7 +167,7 @@
     <div class="btn-row">
       <button class="btn btn-primary" id="wcApplyBtn">この単価を仕入値に反映</button>
     </div>
-  </div>
+  </details>
 
   <div class="card">
     <h2>基本項目</h2>
@@ -398,6 +409,7 @@
     const data = {
       caseMode: $("caseMode").value,
       displayUnit: $("displayUnit").value,
+      weightCorrectionOpen: $("wcDetails").open,
       fields: {},
       amountFields: {},
     };
@@ -417,6 +429,9 @@
       }
       if (data.displayUnit && UNIT_LABEL[data.displayUnit]) {
         $("displayUnit").value = data.displayUnit;
+      }
+      if (typeof data.weightCorrectionOpen === "boolean") {
+        $("wcDetails").open = data.weightCorrectionOpen;
       }
       const fields = data.fields || {};
       SIMPLE_FIELDS.forEach((name) => {
@@ -792,6 +807,7 @@
       $(id).addEventListener("focus", () => $(id).select());
     });
     $("wcApplyBtn").addEventListener("click", onApplyWeightCorrection);
+    $("wcDetails").addEventListener("toggle", saveSettings);
     updateWeightCorrection();
 
     onCaseModeChange();
