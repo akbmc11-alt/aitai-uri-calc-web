@@ -136,6 +136,29 @@
   </div>
 
   <div class="card">
+    <h2>仕入単価の計量補正（任意）</h2>
+    <p class="caption">伝票の数量・単価と、実際に計量し直した重量から実質的な仕入単価を計算します。例: 30.5kg 500円/kgで仕入れ、計量し直すと32kgだった → 実質仕入単価は500円より安くなる</p>
+    <div class="row2">
+      <div class="field">
+        <label>伝票の数量(kg)</label>
+        <input type="text" inputmode="decimal" id="wcDeclaredKg" value="0">
+      </div>
+      <div class="field">
+        <label>伝票の単価(円/kg)</label>
+        <input type="text" inputmode="decimal" id="wcQuotedPrice" value="0">
+      </div>
+    </div>
+    <div class="field">
+      <label>実際の重量(kg)</label>
+      <input type="text" inputmode="decimal" id="wcActualKg" value="0">
+    </div>
+    <p class="result-line" id="wcResultLine"></p>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="wcApplyBtn">この単価を仕入値に反映</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>基本項目</h2>
     <div class="field">
       <label>仕入値</label>
@@ -329,6 +352,12 @@
     return units / 2;
   }
 
+  function actualPurchaseUnitPrice(declaredKg, quotedUnitPrice, actualKg) {
+    if (actualKg <= 0) return null;
+    const totalCost = declaredKg * quotedUnitPrice;
+    return totalCost / actualKg;
+  }
+
   // ------------------------------------------------------------------
   // DOM ヘルパー
   // ------------------------------------------------------------------
@@ -493,6 +522,43 @@
     $("recordName").value = "";
     $("recordCondition").value = "";
     showError("");
+    recalculate();
+  }
+
+  // ------------------------------------------------------------------
+  // 仕入単価の計量補正（任意カード）
+  // ------------------------------------------------------------------
+  let wcLastResult = null;
+
+  function updateWeightCorrection() {
+    let dKg, price, aKg;
+    try {
+      dKg = parseNumber($("wcDeclaredKg").value, "伝票の数量");
+      price = parseNumber($("wcQuotedPrice").value, "伝票の単価");
+      aKg = parseNumber($("wcActualKg").value, "実際の重量");
+    } catch (e) {
+      if (!(e instanceof InputError)) throw e;
+      wcLastResult = null;
+      $("wcResultLine").textContent = e.message;
+      return;
+    }
+    const result = actualPurchaseUnitPrice(dKg, price, aKg);
+    if (result === null) {
+      wcLastResult = null;
+      $("wcResultLine").textContent = "実際の重量を入力してください";
+      return;
+    }
+    wcLastResult = result;
+    const total = dKg * price;
+    $("wcResultLine").textContent = "仕入総額: " + fmt(total, 0) + " 円 ／ 実質仕入単価: " + fmt(result, 2) + " 円/kg";
+  }
+
+  function onApplyWeightCorrection() {
+    updateWeightCorrection();
+    if (wcLastResult === null) return;
+    $("purchaseValue").value = wcLastResult.toFixed(2);
+    $("purchaseUnit").value = "kg";
+    showToast("仕入値に反映しました（" + fmt(wcLastResult, 2) + " 円/kg）");
     recalculate();
   }
 
@@ -720,6 +786,13 @@
     $("deleteRecordBtn").addEventListener("click", onDeleteRecord);
     $("recordSelect").addEventListener("change", onLoadRecord);
     ["recordName", "recordCondition"].forEach((id) => $(id).addEventListener("focus", () => $(id).select()));
+
+    ["wcDeclaredKg", "wcQuotedPrice", "wcActualKg"].forEach((id) => {
+      $(id).addEventListener("input", updateWeightCorrection);
+      $(id).addEventListener("focus", () => $(id).select());
+    });
+    $("wcApplyBtn").addEventListener("click", onApplyWeightCorrection);
+    updateWeightCorrection();
 
     onCaseModeChange();
     refreshRecordMenu();
