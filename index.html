@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#1f6aa5">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231f6aa5'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='sans-serif'%3E%C2%A5%3C/text%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231f6aa5'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='sans-serif'%3E%C2%A5%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="./manifest.json">
 <title>相対売り 損益検証ツール</title>
 <style>
   :root { color-scheme: light; }
@@ -68,6 +69,11 @@
   .btn-row .btn { flex: 1 1 auto; }
   .result-line { font-size: 13.5px; color: #333; margin: 6px 0 0; line-height: 1.5; }
   .result-line.warn { color: #b45309; }
+  .restore-notice {
+    background: #fff8e1; color: #8a6100; border: 1px solid #ffe082;
+    border-radius: 10px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 10px; line-height: 1.4;
+  }
+  .restore-notice:empty { display: none; padding: 0; margin: 0; border: none; }
   .price-row {
     display: flex; justify-content: space-between; align-items: baseline;
     padding: 9px 0; border-bottom: 1px solid #eef0f2; font-size: 14px;
@@ -96,6 +102,7 @@
 <div class="container">
   <h1>相対売り 損益検証ツール（WEB版）</h1>
 
+  <p id="restoreNotice" class="restore-notice"></p>
   <div id="errorBanner" class="error-banner"></div>
 
   <div class="card">
@@ -118,6 +125,11 @@
       <button class="btn btn-neutral" id="clearBtn">クリア</button>
       <button class="btn btn-primary" id="saveRecordBtn">この内容を保存</button>
       <button class="btn btn-danger" id="deleteRecordBtn">削除</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-neutral" id="exportBtn">データを書き出し</button>
+      <button class="btn btn-neutral" id="importBtn">データを読み込み</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none;">
     </div>
   </div>
 
@@ -319,98 +331,19 @@
 
 <div id="toast" class="toast"></div>
 
+<script src="calc.js"></script>
+<script src="store.js"></script>
 <script>
 (function () {
   "use strict";
 
-  // ------------------------------------------------------------------
-  // 計算ロジック（calc.py の移植。ロジックはあちらと1対1で対応させてある）
-  // ------------------------------------------------------------------
-  const UNIT_KG = "kg", UNIT_BAG = "bag", UNIT_CASE = "case";
-  const ZEN_TO_HAN = { "０":"0","１":"1","２":"2","３":"3","４":"4","５":"5","６":"6","７":"7","８":"8","９":"9","．":".","，":"," };
-
-  class InputError extends Error {}
-
-  function parseNumber(text, fieldName) {
-    let t = String(text == null ? "" : text).replace(/[０-９．，]/g, (ch) => ZEN_TO_HAN[ch] || ch).replace(/,/g, "").trim();
-    if (!t) return 0;
-    const n = Number(t);
-    if (Number.isNaN(n)) throw new InputError(fieldName + "に数値を入力してください");
-    return n;
-  }
-
-  function convertToPerKg(value, unit, fieldName, bagKg, caseKg) {
-    if (unit === UNIT_KG) return value;
-    if (unit === UNIT_BAG) {
-      if (bagKg <= 0) throw new InputError(fieldName + "を袋単位で計算するには「1袋あたりの内容量(kg)」を入力してください");
-      return value / bagKg;
-    }
-    if (unit === UNIT_CASE) {
-      if (caseKg <= 0) throw new InputError(fieldName + "をケース単位で計算するには「1ケースあたりの内容量(kg)」の換算を入力してください");
-      return value / caseKg;
-    }
-    throw new InputError("不明な単位です: " + unit);
-  }
-
-  function convertFromPerKg(valuePerKg, unit, bagKg, caseKg) {
-    if (unit === UNIT_KG) return valuePerKg;
-    if (unit === UNIT_BAG) return valuePerKg * bagKg;
-    if (unit === UNIT_CASE) return valuePerKg * caseKg;
-    throw new InputError("不明な単位です: " + unit);
-  }
-
-  function halfMonthUnits(holdingMonths) {
-    if (holdingMonths <= 0) return 0;
-    const rounded = Math.round(holdingMonths * 2 * 1e6) / 1e6;
-    return Math.ceil(rounded - 1e-9);
-  }
-
-  function calculate(p) {
-    const centerFee = p.sell * p.centerFeePct / 100;
-    const storage = p.storageRate * halfMonthUnits(p.holdingMonths);
-    const fixedExclStorage = p.purchase + p.freight + p.labor + p.box + centerFee + p.handling + p.grace + p.freeze;
-    const profitBeforeStorage = p.sell - fixedExclStorage;
-    const profit = profitBeforeStorage - storage;
-    const profitRate = p.sell ? profit / p.sell : null;
-    return { profit: profit, profitRate: profitRate, profitBeforeStorage: profitBeforeStorage };
-  }
-
-  function breakevenSellPrice(p) {
-    const feeRatio = p.centerFeePct / 100;
-    if (feeRatio >= 1) return null;
-    const fixedCosts = p.purchase + p.freight + p.labor + p.box + p.handling + p.grace + p.freeze + p.storage;
-    return fixedCosts / (1 - feeRatio);
-  }
-
-  function sellPriceForTargetRate(p) {
-    const feeRatio = p.centerFeePct / 100;
-    const denom = 1 - feeRatio - p.targetRate;
-    if (denom <= 0) return null;
-    const fixedCosts = p.purchase + p.freight + p.labor + p.box + p.handling + p.grace + p.freeze + p.storage;
-    return fixedCosts / denom;
-  }
-
-  const DEFAULT_REFERENCE_RATES = [0, 0.05, 0.10, 0.15, 0.20];
-
-  function referencePriceTable(p, rates) {
-    return (rates || DEFAULT_REFERENCE_RATES).map((rate) => [
-      rate,
-      sellPriceForTargetRate(Object.assign({}, p, { targetRate: rate })),
-    ]);
-  }
-
-  function breakevenHoldingMonths(profitBeforeStorage, storageRate) {
-    if (storageRate <= 0) return null;
-    if (profitBeforeStorage <= 0) return 0;
-    const units = Math.floor(profitBeforeStorage / storageRate + 1e-9);
-    return units / 2;
-  }
-
-  function actualPurchaseUnitPrice(declaredKg, quotedUnitPrice, actualKg) {
-    if (actualKg <= 0) return null;
-    const totalCost = declaredKg * quotedUnitPrice;
-    return totalCost / actualKg;
-  }
+  // 計算ロジックは calc.js (RelCalc) に集約。ここではUIのみを扱う。
+  const {
+    UNIT_KG, UNIT_BAG, UNIT_CASE, InputError,
+    parseNumber, convertToPerKg, convertFromPerKg, halfMonthUnits, calculate,
+    breakevenSellPrice, sellPriceForTargetRate, referencePriceTable,
+    breakevenHoldingMonths, actualPurchaseUnitPrice,
+  } = window.RelCalc;
 
   // ------------------------------------------------------------------
   // DOM ヘルパー
@@ -422,9 +355,6 @@
   const SIMPLE_FIELDS = ["caseKgDirect", "bagKg", "caseBags", "centerFee", "holdingMonths",
                           "startPrice", "priceStep", "targetRate", "caseCount"];
   const AMOUNT_FIELDS = ["purchase", "freight", "labor", "box", "storageRate", "handling", "grace", "freeze"];
-
-  const STORAGE_KEY = "aitaiUriCalc.lastInput";
-  const RECORDS_KEY = "aitaiUriCalc.records";
 
   function fmt(n, digits) {
     return Number(n).toLocaleString("ja-JP", { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -492,43 +422,29 @@
     }
   }
 
+  // 保存は統一ストア(RelStore、store.js)に集約。schemaVersion付きのenvelope1つに
+  // lastInput/records/freightPresetsをまとめて持ち、旧3キーからの移行も自動で行う。
   function loadSettings() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      applySettings(JSON.parse(raw));
-    } catch (e) { /* 無視 */ }
+    const data = RelStore.loadSettings();
+    if (!data || Object.keys(data).length === 0) return;
+    applySettings(data);
+    if (data.recordName !== undefined) $("recordName").value = data.recordName;
+    if (data.recordCondition !== undefined) $("recordCondition").value = data.recordCondition;
+    const who = (data.recordName || "").trim() ? "（品名: " + data.recordName + "）" : "";
+    $("restoreNotice").textContent = "前回の入力内容を復元しました" + who + "。別の商談ならクリアしてください。";
   }
 
   function saveSettings() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(collectSettings())); } catch (e) { /* 無視 */ }
+    const data = collectSettings();
+    data.recordName = $("recordName").value;
+    data.recordCondition = $("recordCondition").value;
+    RelStore.saveSettings(data);
   }
 
-  function loadRecords() {
-    try {
-      const raw = localStorage.getItem(RECORDS_KEY);
-      const data = raw ? JSON.parse(raw) : [];
-      return Array.isArray(data) ? data : [];
-    } catch (e) { return []; }
-  }
-
-  function saveRecords(records) {
-    try { localStorage.setItem(RECORDS_KEY, JSON.stringify(records)); } catch (e) { /* 無視 */ }
-  }
-
-  const FREIGHT_PRESETS_KEY = "aitaiUriCalc.freightPresets";
-
-  function loadFreightPresets() {
-    try {
-      const raw = localStorage.getItem(FREIGHT_PRESETS_KEY);
-      const data = raw ? JSON.parse(raw) : [];
-      return Array.isArray(data) ? data : [];
-    } catch (e) { return []; }
-  }
-
-  function saveFreightPresets(presets) {
-    try { localStorage.setItem(FREIGHT_PRESETS_KEY, JSON.stringify(presets)); } catch (e) { /* 無視 */ }
-  }
+  function loadRecords() { return RelStore.loadRecords(); }
+  function saveRecords(records) { RelStore.saveRecords(records); }
+  function loadFreightPresets() { return RelStore.loadFreightPresets(); }
+  function saveFreightPresets(presets) { RelStore.saveFreightPresets(presets); }
 
   function refreshFreightPresetSelects(selectName) {
     const presets = loadFreightPresets();
@@ -585,8 +501,17 @@
       return;
     }
     const unit = $("fpRateUnit").value;
-    const presets = loadFreightPresets().filter((p) => p.name !== name);
-    presets.push({ name, value, unit });
+    let presets = loadFreightPresets();
+    const existing = presets.find((p) => p.name === name);
+    let id;
+    if (existing) {
+      if (!confirm("「" + name + "」は既に登録されています。上書きしますか？")) return;
+      id = existing.id || RelStore.newId();
+      presets = presets.filter((p) => p.id !== id);
+    } else {
+      id = RelStore.newId();
+    }
+    presets.push({ id, name, value, unit, updatedAt: new Date().toISOString() });
     saveFreightPresets(presets);
     refreshFreightPresetSelects(name);
     $("fpSaveStatus").textContent = "「" + name + "」を保存しました";
@@ -595,6 +520,7 @@
   function onDeleteFreightPreset() {
     const name = $("fpSelect").value;
     if (!name) return;
+    if (!confirm("「" + name + "」を削除しますか？")) return;
     const presets = loadFreightPresets().filter((p) => p.name !== name);
     saveFreightPresets(presets);
     refreshFreightPresetSelects();
@@ -630,8 +556,17 @@
     const condition = $("recordCondition").value.trim();
     if (!name) { showError("記録として保存するには品名を入力してください"); return; }
     const label = recordLabel(name, condition);
-    let records = loadRecords().filter((r) => r.label !== label);
-    records.push({ label: label, name: name, condition: condition, data: collectSettings() });
+    let records = loadRecords();
+    const existing = records.find((r) => r.label === label);
+    let id;
+    if (existing) {
+      if (!confirm("「" + label + "」は既に保存されています。上書きしますか？")) return;
+      id = existing.id || RelStore.newId();
+      records = records.filter((r) => r.id !== id);
+    } else {
+      id = RelStore.newId();
+    }
+    records.push({ id, label, name, condition, data: collectSettings(), updatedAt: new Date().toISOString() });
     saveRecords(records);
     refreshRecordMenu(label);
     showError("");
@@ -647,13 +582,17 @@
     $("recordName").value = record.name || "";
     $("recordCondition").value = record.condition || "";
     showToast("「" + label + "」を呼び出しました");
+    $("restoreNotice").textContent = "";
     recalculate();
   }
 
   function onDeleteRecord() {
     const label = $("recordSelect").value;
     if (!label) return;
-    const records = loadRecords().filter((r) => r.label !== label);
+    const record = loadRecords().find((r) => r.label === label);
+    if (!record) return;
+    if (!confirm("「" + label + "」を削除しますか？")) return;
+    const records = loadRecords().filter((r) => r.id !== record.id);
     saveRecords(records);
     refreshRecordMenu();
     showToast("「" + label + "」を削除しました");
@@ -665,7 +604,49 @@
     $("recordName").value = "";
     $("recordCondition").value = "";
     showError("");
+    $("restoreNotice").textContent = "";
     recalculate();
+  }
+
+  // ------------------------------------------------------------------
+  // データの書き出し・読み込み(デスクトップ版とのファイル経由の手動同期)
+  // ------------------------------------------------------------------
+  function onExport() {
+    const store = RelStore.loadStore();
+    const blob = new Blob([JSON.stringify(store, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "aitai-uri-calc-backup.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("データを書き出しました");
+  }
+
+  function onImportFileChosen(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!confirm("現在の前回入力値・記録・行き先プリセットを、選んだファイルの内容で置き換えます。よろしいですか？")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result));
+        RelStore.saveStore(data);
+      } catch (e) {
+        alert("読み込めませんでした: " + e.message);
+        return;
+      }
+      loadSettings();
+      refreshRecordMenu();
+      refreshFreightPresetSelects();
+      recalculate();
+      showToast("データを読み込みました");
+    };
+    reader.onerror = () => alert("ファイルを読み込めませんでした");
+    reader.readAsText(file);
   }
 
   // ------------------------------------------------------------------
@@ -943,6 +924,9 @@
     $("deleteRecordBtn").addEventListener("click", onDeleteRecord);
     $("recordSelect").addEventListener("change", onLoadRecord);
     ["recordName", "recordCondition"].forEach((id) => $(id).addEventListener("focus", () => $(id).select()));
+    $("exportBtn").addEventListener("click", onExport);
+    $("importBtn").addEventListener("click", () => $("importFile").click());
+    $("importFile").addEventListener("change", onImportFileChosen);
 
     ["wcDeclaredKg", "wcQuotedPrice", "wcActualKg"].forEach((id) => {
       $(id).addEventListener("input", updateWeightCorrection);
@@ -963,11 +947,10 @@
     loadSettings();
     recalculate();
 
-    // service worker はサーバー配信時(http/https)のみ有効化を試みる。
-    // file:// 直接開いた場合は静かにスキップする(機能上は無くても常に動く)。
+    // Service Workerを登録し、1回ネットで開けば以降は電波が無くても起動できるようにする。
+    // file://直接開いた場合は登録自体が失敗するだけなので、そのままフォールバックして問題ない。
     if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
-      // このアプリは全計算がクライアント内で完結するため、追加のオフラインキャッシュは必須ではない。
-      // 将来オフライン用Service Workerを追加する場合はここに registration を書く。
+      navigator.serviceWorker.register("./sw.js").catch(() => { /* オフライン化なしでも動作は継続する */ });
     }
   });
 })();

@@ -1,7 +1,7 @@
 // 相対売り損益検証ツール - Service Worker
 // ネット接続時は常に最新版を取りに行き、取れなければキャッシュ(=オフライン時)にフォールバックする。
-const CACHE_NAME = "aitai-uri-calc-v1";
-const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
+const CACHE_NAME = "aitai-uri-calc-v3";
+const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg", "./calc.js", "./store.js"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
