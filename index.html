@@ -9,7 +9,6 @@
 <meta name="theme-color" content="#1f6aa5">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231f6aa5'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='sans-serif'%3E%C2%A5%3C/text%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231f6aa5'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='sans-serif'%3E%C2%A5%3C/text%3E%3C/svg%3E">
-<link rel="manifest" href="./manifest.json">
 <title>相対売り 損益検証ツール</title>
 <style>
   :root { color-scheme: light; }
@@ -29,17 +28,17 @@
   }
   .card h2 { font-size: 14px; margin: 0 0 4px; color: #333; }
   .caption { font-size: 12px; color: #777; margin: 0 0 10px; line-height: 1.4; }
-  .wc-details > summary {
+  .collapsible-card > summary {
     font-size: 14px; font-weight: 600; color: #333; cursor: pointer;
     list-style: none; display: flex; justify-content: space-between; align-items: center;
   }
-  .wc-details > summary::-webkit-details-marker { display: none; }
-  .wc-details > summary .chevron {
+  .collapsible-card > summary::-webkit-details-marker { display: none; }
+  .collapsible-card > summary .chevron {
     width: 9px; height: 9px; border-right: 2px solid #999; border-bottom: 2px solid #999;
     transform: rotate(-45deg); transition: transform 0.15s; flex: none; margin-left: 8px;
   }
-  .wc-details[open] > summary .chevron { transform: rotate(45deg); }
-  .wc-details > summary + .caption { margin-top: 10px; }
+  .collapsible-card[open] > summary .chevron { transform: rotate(45deg); }
+  .collapsible-card > summary + .caption { margin-top: 10px; }
   .field { margin-bottom: 10px; }
   .field:last-child { margin-bottom: 0; }
   label { display: block; font-size: 13px; color: #444; margin-bottom: 4px; }
@@ -51,6 +50,10 @@
   .amount-row { display: flex; gap: 8px; }
   .amount-row input { flex: 1 1 auto; min-width: 0; }
   .amount-row select { flex: 0 0 84px; }
+  select.quick-select {
+    margin-top: 6px; font-size: 12.5px; padding: 6px 8px; color: #767b80;
+    background: transparent; border: 1px dashed #ccd2d8; width: 100%;
+  }
   .row2 { display: flex; gap: 10px; }
   .row2 > .field { flex: 1 1 0; }
   .btn {
@@ -146,7 +149,7 @@
     </div>
   </div>
 
-  <details class="card wc-details" id="wcDetails">
+  <details class="card collapsible-card" id="wcDetails">
     <summary>計量補正（伝票と実重量が違うとき）<span class="chevron" aria-hidden="true"></span></summary>
     <p class="caption">伝票の数量・単価と、実際に計量し直した重量から実質的な仕入単価を計算します。例: 30.5kg 500円/kgで仕入れ、計量し直すと32kgだった → 実質仕入単価は500円より安くなる</p>
     <div class="row2">
@@ -169,6 +172,33 @@
     </div>
   </details>
 
+  <details class="card collapsible-card" id="fpDetails">
+    <summary>行き先ごとの運賃を登録・編集<span class="chevron" aria-hidden="true"></span></summary>
+    <p class="caption">よく使う行き先の運賃を登録しておくと、上の「運賃」欄で選ぶだけで入力できます。</p>
+    <div class="field">
+      <label>登録済みの行き先</label>
+      <select id="fpSelect"><option value="">(登録なし)</option></select>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-danger" id="fpDeleteBtn">削除</button>
+    </div>
+    <div class="field" style="margin-top:14px;">
+      <label>行き先名</label>
+      <input type="text" id="fpName" placeholder="例: 博多港">
+    </div>
+    <div class="field">
+      <label>運賃</label>
+      <div class="amount-row">
+        <input type="text" inputmode="decimal" id="fpRateValue" value="0">
+        <select id="fpRateUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
+      </div>
+    </div>
+    <p class="result-line" id="fpSaveStatus"></p>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="fpSaveBtn">この行き先を保存</button>
+    </div>
+  </details>
+
   <div class="card">
     <h2>基本項目</h2>
     <div class="field">
@@ -184,6 +214,9 @@
         <input type="text" inputmode="decimal" id="freightValue" value="0">
         <select id="freightUnit"><option value="kg">円/kg</option><option value="bag">円/袋</option><option value="case">円/ケース</option></select>
       </div>
+      <select id="freightPresetQuickSelect" class="quick-select">
+        <option value="">行き先から選ぶ（登録なし）</option>
+      </select>
     </div>
     <div class="field">
       <label>労務費</label>
@@ -273,6 +306,7 @@
   <div class="card">
     <h2>参考情報</h2>
     <p class="result-line" id="breakevenLine"></p>
+    <p class="result-line" id="referenceTableLine"></p>
     <p class="result-line" id="targetRateLine"></p>
     <p class="result-line" id="holdingNoteLine"></p>
   </div>
@@ -354,6 +388,15 @@
     if (denom <= 0) return null;
     const fixedCosts = p.purchase + p.freight + p.labor + p.box + p.handling + p.grace + p.freeze + p.storage;
     return fixedCosts / denom;
+  }
+
+  const DEFAULT_REFERENCE_RATES = [0, 0.05, 0.10, 0.15, 0.20];
+
+  function referencePriceTable(p, rates) {
+    return (rates || DEFAULT_REFERENCE_RATES).map((rate) => [
+      rate,
+      sellPriceForTargetRate(Object.assign({}, p, { targetRate: rate })),
+    ]);
   }
 
   function breakevenHoldingMonths(profitBeforeStorage, storageRate) {
@@ -471,6 +514,91 @@
 
   function saveRecords(records) {
     try { localStorage.setItem(RECORDS_KEY, JSON.stringify(records)); } catch (e) { /* 無視 */ }
+  }
+
+  const FREIGHT_PRESETS_KEY = "aitaiUriCalc.freightPresets";
+
+  function loadFreightPresets() {
+    try {
+      const raw = localStorage.getItem(FREIGHT_PRESETS_KEY);
+      const data = raw ? JSON.parse(raw) : [];
+      return Array.isArray(data) ? data : [];
+    } catch (e) { return []; }
+  }
+
+  function saveFreightPresets(presets) {
+    try { localStorage.setItem(FREIGHT_PRESETS_KEY, JSON.stringify(presets)); } catch (e) { /* 無視 */ }
+  }
+
+  function refreshFreightPresetSelects(selectName) {
+    const presets = loadFreightPresets();
+    const quickSelect = $("freightPresetQuickSelect");
+    quickSelect.innerHTML = "";
+    const quickPlaceholder = document.createElement("option");
+    quickPlaceholder.value = "";
+    quickPlaceholder.textContent = presets.length ? "行き先から選ぶ" : "行き先から選ぶ（登録なし）";
+    quickSelect.appendChild(quickPlaceholder);
+    presets.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.name; opt.textContent = p.name;
+      quickSelect.appendChild(opt);
+    });
+
+    const fpSelect = $("fpSelect");
+    fpSelect.innerHTML = "";
+    if (presets.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = ""; opt.textContent = "(登録なし)";
+      fpSelect.appendChild(opt);
+    } else {
+      presets.forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.name; opt.textContent = p.name;
+        fpSelect.appendChild(opt);
+      });
+      if (selectName && presets.some((p) => p.name === selectName)) fpSelect.value = selectName;
+    }
+  }
+
+  function onQuickSelectFreightPreset() {
+    const name = $("freightPresetQuickSelect").value;
+    if (!name) return;
+    const preset = loadFreightPresets().find((p) => p.name === name);
+    if (preset) {
+      $("freightValue").value = preset.value;
+      $("freightUnit").value = preset.unit;
+      showToast("「" + name + "」の運賃を反映しました");
+      recalculate();
+    }
+    $("freightPresetQuickSelect").value = "";
+  }
+
+  function onSaveFreightPreset() {
+    const name = $("fpName").value.trim();
+    if (!name) { $("fpSaveStatus").textContent = "行き先名を入力してください"; return; }
+    let value;
+    try {
+      value = parseNumber($("fpRateValue").value, "運賃");
+    } catch (e) {
+      if (!(e instanceof InputError)) throw e;
+      $("fpSaveStatus").textContent = e.message;
+      return;
+    }
+    const unit = $("fpRateUnit").value;
+    const presets = loadFreightPresets().filter((p) => p.name !== name);
+    presets.push({ name, value, unit });
+    saveFreightPresets(presets);
+    refreshFreightPresetSelects(name);
+    $("fpSaveStatus").textContent = "「" + name + "」を保存しました";
+  }
+
+  function onDeleteFreightPreset() {
+    const name = $("fpSelect").value;
+    if (!name) return;
+    const presets = loadFreightPresets().filter((p) => p.name !== name);
+    saveFreightPresets(presets);
+    refreshFreightPresetSelects();
+    showToast("「" + name + "」を削除しました");
   }
 
   function recordLabel(name, condition) {
@@ -668,6 +796,20 @@
         fmt(breakevenDisplay, 2) + " 円/" + displayLabel + " 相当）";
     }
 
+    const refTable = referencePriceTable({
+      purchase: costs.purchase, freight: costs.freight, labor: costs.labor, box: costs.box,
+      centerFeePct: costs.centerFeePct, handling: costs.handling, grace: costs.grace,
+      freeze: costs.freeze, storage: storage,
+    });
+    const refParts = [];
+    refTable.forEach(([rate, pricePerKg]) => {
+      if (pricePerKg === null) return;
+      const priceDisplay = convertFromPerKg(pricePerKg, displayUnit, costs.bagKg, costs.caseKg);
+      const rateLabel = rate === 0 ? "損益分岐" : (rate * 100).toFixed(0) + "%";
+      refParts.push(rateLabel + ": " + fmt(priceDisplay, 0) + "円");
+    });
+    $("referenceTableLine").textContent = refParts.length ? ("利益率ごとの必要単価：" + refParts.join(" ／ ")) : "";
+
     let start, step;
     try {
       start = parseNumber($("startPrice").value, "開始単価");
@@ -810,15 +952,22 @@
     $("wcDetails").addEventListener("toggle", saveSettings);
     updateWeightCorrection();
 
+    $("freightPresetQuickSelect").addEventListener("change", onQuickSelectFreightPreset);
+    $("fpSaveBtn").addEventListener("click", onSaveFreightPreset);
+    $("fpDeleteBtn").addEventListener("click", onDeleteFreightPreset);
+    ["fpRateValue"].forEach((id) => $(id).addEventListener("focus", () => $(id).select()));
+    refreshFreightPresetSelects();
+
     onCaseModeChange();
     refreshRecordMenu();
     loadSettings();
     recalculate();
 
-    // Service Workerを登録し、1回ネットで開けば以降は電波が無くても起動できるようにする。
-    // file://直接開いた場合は登録自体が失敗するだけなので、そのままフォールバックして問題ない。
+    // service worker はサーバー配信時(http/https)のみ有効化を試みる。
+    // file:// 直接開いた場合は静かにスキップする(機能上は無くても常に動く)。
     if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
-      navigator.serviceWorker.register("./sw.js").catch(() => { /* オフライン化なしでも動作は継続する */ });
+      // このアプリは全計算がクライアント内で完結するため、追加のオフラインキャッシュは必須ではない。
+      // 将来オフライン用Service Workerを追加する場合はここに registration を書く。
     }
   });
 })();
