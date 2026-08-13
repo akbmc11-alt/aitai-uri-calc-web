@@ -210,6 +210,29 @@
     </div>
   </details>
 
+  <details class="card collapsible-card" id="saiDetails">
+    <summary>才建て運賃計算（船便・沖縄向けなど）<span class="chevron" aria-hidden="true"></span></summary>
+    <p class="caption">船便の才建て運賃（基本運賃×BAF×才数）を計算します。荷物の大きさ(才数)で運賃が決まる場合に使います。</p>
+    <div class="row2">
+      <div class="field">
+        <label>基本運賃(円/才)</label>
+        <input type="text" inputmode="decimal" id="saiBaseRate" value="360">
+      </div>
+      <div class="field">
+        <label>BAF(掛け率)</label>
+        <input type="text" inputmode="decimal" id="saiBaf" value="1.74">
+      </div>
+    </div>
+    <div class="field">
+      <label>才数</label>
+      <input type="text" inputmode="decimal" id="saiCount" value="0">
+    </div>
+    <p class="result-line" id="saiResultLine"></p>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="saiApplyBtn">運賃に反映(単位はケース)</button>
+    </div>
+  </details>
+
   <details class="card collapsible-card" id="fpDetails">
     <summary>行き先ごとの運賃を登録・編集<span class="chevron" aria-hidden="true"></span></summary>
     <p class="caption">よく使う行き先の運賃を登録しておくと、上の「運賃」欄で選ぶだけで入力できます。</p>
@@ -394,7 +417,7 @@
     UNIT_KG, UNIT_BAG, UNIT_CASE, InputError,
     parseNumber, convertToPerKg, convertFromPerKg, halfMonthUnits, calculate,
     breakevenSellPrice, sellPriceForTargetRate, referencePriceTable,
-    breakevenHoldingMonths, actualPurchaseUnitPrice, sensitivityAnalysis,
+    breakevenHoldingMonths, actualPurchaseUnitPrice, sensitivityAnalysis, saiFreight,
   } = window.RelCalc;
 
   // ------------------------------------------------------------------
@@ -435,6 +458,7 @@
       caseMode: $("caseMode").value,
       displayUnit: $("displayUnit").value,
       weightCorrectionOpen: $("wcDetails").open,
+      saiFreightOpen: $("saiDetails").open,
       fields: {},
       amountFields: {},
     };
@@ -457,6 +481,9 @@
       }
       if (typeof data.weightCorrectionOpen === "boolean") {
         $("wcDetails").open = data.weightCorrectionOpen;
+      }
+      if (typeof data.saiFreightOpen === "boolean") {
+        $("saiDetails").open = data.saiFreightOpen;
       }
       const fields = data.fields || {};
       SIMPLE_FIELDS.forEach((name) => {
@@ -878,6 +905,42 @@
   }
 
   // ------------------------------------------------------------------
+  // 才建て運賃計算（船便、沖縄向けなど。基本運賃×BAF×才数）
+  // ------------------------------------------------------------------
+  let saiLastResult = null;
+
+  function updateSaiFreight() {
+    let rate, baf, count;
+    try {
+      rate = parseNumber($("saiBaseRate").value, "基本運賃");
+      baf = parseNumber($("saiBaf").value, "BAF");
+      count = parseNumber($("saiCount").value, "才数");
+    } catch (e) {
+      if (!(e instanceof InputError)) throw e;
+      saiLastResult = null;
+      $("saiResultLine").textContent = e.message;
+      return;
+    }
+    if (count <= 0) {
+      saiLastResult = null;
+      $("saiResultLine").textContent = "才数を入力してください";
+      return;
+    }
+    const result = saiFreight(count, rate, baf);
+    saiLastResult = result;
+    $("saiResultLine").textContent = "才単価: " + fmt(rate * baf, 2) + " 円/才 ／ 合計運賃(1個あたり): " + fmt(result, 2) + " 円";
+  }
+
+  function onApplySaiFreight() {
+    updateSaiFreight();
+    if (saiLastResult === null) return;
+    $("freightValue").value = saiLastResult.toFixed(2);
+    $("freightUnit").value = "case";
+    showToast("運賃に反映しました（" + fmt(saiLastResult, 2) + " 円/ケース）");
+    recalculate();
+  }
+
+  // ------------------------------------------------------------------
   // ケース換算モードの表示切替
   // ------------------------------------------------------------------
   function onCaseModeChange() {
@@ -1194,6 +1257,14 @@
     $("wcApplyBtn").addEventListener("click", onApplyWeightCorrection);
     $("wcDetails").addEventListener("toggle", saveSettings);
     updateWeightCorrection();
+
+    ["saiBaseRate", "saiBaf", "saiCount"].forEach((id) => {
+      $(id).addEventListener("input", updateSaiFreight);
+      $(id).addEventListener("focus", () => $(id).select());
+    });
+    $("saiApplyBtn").addEventListener("click", onApplySaiFreight);
+    $("saiDetails").addEventListener("toggle", saveSettings);
+    updateSaiFreight();
 
     $("freightPresetQuickSelect").addEventListener("change", onQuickSelectFreightPreset);
     $("fpSaveBtn").addEventListener("click", onSaveFreightPreset);

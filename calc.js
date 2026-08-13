@@ -96,6 +96,10 @@
     return totalCost / actualKg;
   }
 
+  function saiFreight(saiCount, baseRate, baf) {
+    return saiCount * baseRate * baf;
+  }
+
   const SENSITIVITY_FACTORS = [
     ["purchase", "仕入値"], ["freight", "運賃"], ["labor", "労務費"], ["box", "箱代"],
     ["centerFeePct", "センターフィ"], ["handling", "入出庫料金"], ["grace", "グレース料"],
@@ -135,6 +139,6 @@
     UNIT_KG, UNIT_BAG, UNIT_CASE, InputError,
     parseNumber, convertToPerKg, convertFromPerKg, halfMonthUnits, calculate,
     breakevenSellPrice, sellPriceForTargetRate, DEFAULT_REFERENCE_RATES, referencePriceTable,
-    breakevenHoldingMonths, actualPurchaseUnitPrice, sensitivityAnalysis,
+    breakevenHoldingMonths, actualPurchaseUnitPrice, sensitivityAnalysis, saiFreight,
   };
 });
