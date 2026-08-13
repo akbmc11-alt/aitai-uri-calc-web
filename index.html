@@ -104,6 +104,12 @@
   .price-row.profit-pos .profit { color: #1e8e3e; }
   .price-row.profit-neg .profit { color: #d33; }
   .price-sub { font-size: 11.5px; color: #888; margin-top: 2px; }
+  .tornado-row { display: flex; align-items: center; gap: 8px; margin: 7px 0; }
+  .tornado-label { width: 84px; flex: 0 0 auto; font-size: 12px; color: #444; }
+  .tornado-track { position: relative; flex: 1 1 auto; height: 18px; background: #eef1f4; border-radius: 4px; }
+  .tornado-bar { position: absolute; top: 0; height: 100%; background: #1f6aa5; border-radius: 4px; }
+  .tornado-base-line { position: absolute; top: -3px; bottom: -3px; width: 1px; background: #999; }
+  .tornado-value { width: 108px; flex: 0 0 auto; text-align: right; font-size: 11px; color: #555; }
   .error-banner {
     display: none; background: #fff3e0; color: #a35a00; border: 1px solid #ffcc80;
     border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px;
@@ -360,9 +366,16 @@
       <div class="btn-row" style="margin-top:0;">
         <button class="btn btn-neutral btn-small" id="csvExportBtn">CSV出力</button>
         <button class="btn btn-neutral btn-small" id="pdfExportBtn">PDF出力</button>
+        <button class="btn btn-neutral btn-small" id="sensitivityBtn">感度分析</button>
       </div>
     </div>
     <div id="priceList"></div>
+  </div>
+
+  <div class="card" id="sensitivityCard" style="display:none;">
+    <h2>感度分析（トルネードチャート）</h2>
+    <p class="caption" id="sensitivityCaption"></p>
+    <div id="sensitivityChart"></div>
   </div>
 </div>
 
@@ -381,7 +394,7 @@
     UNIT_KG, UNIT_BAG, UNIT_CASE, InputError,
     parseNumber, convertToPerKg, convertFromPerKg, halfMonthUnits, calculate,
     breakevenSellPrice, sellPriceForTargetRate, referencePriceTable,
-    breakevenHoldingMonths, actualPurchaseUnitPrice,
+    breakevenHoldingMonths, actualPurchaseUnitPrice, sensitivityAnalysis,
   } = window.RelCalc;
 
   // ------------------------------------------------------------------
@@ -709,6 +722,84 @@
     html += "</tbody></table>";
     $("printView").innerHTML = html;
     window.print();
+  }
+
+  // 感度分析（トルネードチャート）: 開始単価を基準に、各コスト項目を±10%動かした時の利益への影響
+  function onSensitivityAnalysis() {
+    let costs;
+    try { costs = readCosts(); } catch (e) { if (e instanceof InputError) { alert(e.message); return; } throw e; }
+    let start;
+    try { start = parseNumber($("startPrice").value, "開始単価"); } catch (e) { alert(e.message); return; }
+
+    const displayUnit = $("displayUnit").value;
+    const displayLabel = UNIT_LABEL[displayUnit];
+    let sellPerKg;
+    try {
+      sellPerKg = convertToPerKg(start, displayUnit, "開始単価", costs.bagKg, costs.caseKg);
+    } catch (e) { if (e instanceof InputError) { alert(e.message); return; } throw e; }
+
+    const result = sensitivityAnalysis({
+      sell: sellPerKg, purchase: costs.purchase, freight: costs.freight, labor: costs.labor, box: costs.box,
+      centerFeePct: costs.centerFeePct, handling: costs.handling, grace: costs.grace, freeze: costs.freeze,
+      storageRate: costs.storageRate, holdingMonths: costs.holdingMonths,
+    });
+    const toDisplay = (v) => convertFromPerKg(v, displayUnit, costs.bagKg, costs.caseKg);
+    const baseProfit = toDisplay(result.baseProfit);
+    const rows = result.rows.map((r) => ({
+      label: r.label, profitLow: toDisplay(r.profitLow), profitHigh: toDisplay(r.profitHigh),
+    }));
+
+    $("sensitivityCaption").textContent =
+      "開始単価 " + fmt(start, 2) + " 円/" + displayLabel + " を基準に、各コスト項目を±10%動かした時の利益への影響。" +
+      "基準利益: " + fmt(baseProfit, 2) + " 円/" + displayLabel + "（影響が大きい項目ほど上に表示）";
+
+    const allValues = [baseProfit].concat(rows.flatMap((r) => [r.profitLow, r.profitHigh]));
+    let lo = Math.min.apply(null, allValues);
+    let hi = Math.max.apply(null, allValues);
+    const span0 = Math.max(hi - lo, 1e-9);
+    const pad = span0 * 0.08;
+    lo -= pad;
+    hi += pad;
+    const span = hi - lo;
+    const basePct = ((baseProfit - lo) / span) * 100;
+
+    const chart = $("sensitivityChart");
+    chart.innerHTML = "";
+    rows.forEach((row) => {
+      const leftPct = ((row.profitLow - lo) / span) * 100;
+      const rightPct = ((row.profitHigh - lo) / span) * 100;
+
+      const wrap = document.createElement("div");
+      wrap.className = "tornado-row";
+
+      const label = document.createElement("div");
+      label.className = "tornado-label";
+      label.textContent = row.label;
+
+      const track = document.createElement("div");
+      track.className = "tornado-track";
+      const bar = document.createElement("div");
+      bar.className = "tornado-bar";
+      bar.style.left = leftPct + "%";
+      bar.style.width = Math.max(rightPct - leftPct, 0.5) + "%";
+      const baseLine = document.createElement("div");
+      baseLine.className = "tornado-base-line";
+      baseLine.style.left = basePct + "%";
+      track.appendChild(bar);
+      track.appendChild(baseLine);
+
+      const value = document.createElement("div");
+      value.className = "tornado-value";
+      value.textContent = fmt(row.profitLow, 0) + " 〜 " + fmt(row.profitHigh, 0);
+
+      wrap.appendChild(label);
+      wrap.appendChild(track);
+      wrap.appendChild(value);
+      chart.appendChild(wrap);
+    });
+
+    $("sensitivityCard").style.display = "";
+    $("sensitivityCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function onExport() {
@@ -1094,6 +1185,7 @@
     $("importFile").addEventListener("change", onImportFileChosen);
     $("csvExportBtn").addEventListener("click", onExportCsv);
     $("pdfExportBtn").addEventListener("click", onExportPdf);
+    $("sensitivityBtn").addEventListener("click", onSensitivityAnalysis);
 
     ["wcDeclaredKg", "wcQuotedPrice", "wcActualKg"].forEach((id) => {
       $(id).addEventListener("input", updateWeightCorrection);

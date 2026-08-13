@@ -96,10 +96,45 @@
     return totalCost / actualKg;
   }
 
+  const SENSITIVITY_FACTORS = [
+    ["purchase", "仕入値"], ["freight", "運賃"], ["labor", "労務費"], ["box", "箱代"],
+    ["centerFeePct", "センターフィ"], ["handling", "入出庫料金"], ["grace", "グレース料"],
+    ["freeze", "凍結料"], ["storageRate", "倉賃(半月単価)"],
+  ];
+
+  function sensitivityAnalysis(p) {
+    const swing = p.swing == null ? 0.1 : p.swing;
+    const base = {
+      purchase: p.purchase, freight: p.freight, labor: p.labor, box: p.box, centerFeePct: p.centerFeePct,
+      handling: p.handling, grace: p.grace, freeze: p.freeze, storageRate: p.storageRate,
+      holdingMonths: p.holdingMonths,
+    };
+    function profitAt(overrides) {
+      const values = Object.assign({}, base, overrides);
+      return calculate({
+        sell: p.sell, purchase: values.purchase, freight: values.freight, labor: values.labor,
+        box: values.box, centerFeePct: values.centerFeePct, handling: values.handling,
+        grace: values.grace, freeze: values.freeze, storageRate: values.storageRate,
+        holdingMonths: values.holdingMonths,
+      }).profit;
+    }
+    const baseProfit = profitAt({});
+    const rows = SENSITIVITY_FACTORS.map(([key, label]) => {
+      const baseValue = base[key];
+      const profitA = profitAt({ [key]: baseValue * (1 - swing) });
+      const profitB = profitAt({ [key]: baseValue * (1 + swing) });
+      const profitLow = Math.min(profitA, profitB);
+      const profitHigh = Math.max(profitA, profitB);
+      return { key, label, profitLow, profitHigh, swing: profitHigh - profitLow };
+    });
+    rows.sort((a, b) => b.swing - a.swing);
+    return { baseProfit, rows };
+  }
+
   return {
     UNIT_KG, UNIT_BAG, UNIT_CASE, InputError,
     parseNumber, convertToPerKg, convertFromPerKg, halfMonthUnits, calculate,
     breakevenSellPrice, sellPriceForTargetRate, DEFAULT_REFERENCE_RATES, referencePriceTable,
-    breakevenHoldingMonths, actualPurchaseUnitPrice,
+    breakevenHoldingMonths, actualPurchaseUnitPrice, sensitivityAnalysis,
   };
 });
