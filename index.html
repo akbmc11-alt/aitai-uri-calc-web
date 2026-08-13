@@ -69,6 +69,12 @@
   .btn-row .btn { flex: 1 1 auto; }
   .result-line { font-size: 13.5px; color: #333; margin: 6px 0 0; line-height: 1.5; }
   .result-line.warn { color: #b45309; }
+  .anchor-row { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+  .anchor-value { font-size: 14.5px; font-weight: 700; }
+  .anchor-value:empty { display: none; }
+  .anchor-breakeven { color: #e53935; }
+  .anchor-target { color: #fb8c00; }
+  .anchor-initial { color: #43a047; }
   .restore-notice {
     background: #fff8e1; color: #8a6100; border: 1px solid #ffe082;
     border-radius: 10px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 10px; line-height: 1.4;
@@ -309,14 +315,25 @@
         <input type="text" inputmode="decimal" id="priceStep" value="10">
       </div>
     </div>
-    <div class="field">
-      <label>目標利益率(%)</label>
-      <input type="text" inputmode="decimal" id="targetRate" value="5">
+    <div class="row2">
+      <div class="field">
+        <label>目標利益率(%)</label>
+        <input type="text" inputmode="decimal" id="targetRate" value="5">
+      </div>
+      <div class="field">
+        <label>初期提示 上乗せ(%)</label>
+        <input type="text" inputmode="decimal" id="anchorMargin" value="5">
+      </div>
     </div>
   </div>
 
   <div class="card">
     <h2>参考情報</h2>
+    <div class="anchor-row">
+      <span class="anchor-value anchor-breakeven" id="anchorBreakeven"></span>
+      <span class="anchor-value anchor-target" id="anchorTarget"></span>
+      <span class="anchor-value anchor-initial" id="anchorInitial"></span>
+    </div>
     <p class="result-line" id="breakevenLine"></p>
     <p class="result-line" id="referenceTableLine"></p>
     <p class="result-line" id="targetRateLine"></p>
@@ -353,7 +370,7 @@
   const UNIT_LABEL = { kg: "kg", bag: "袋", case: "ケース" };
 
   const SIMPLE_FIELDS = ["caseKgDirect", "bagKg", "caseBags", "centerFee", "holdingMonths",
-                          "startPrice", "priceStep", "targetRate", "caseCount"];
+                          "startPrice", "priceStep", "targetRate", "anchorMargin", "caseCount"];
   const AMOUNT_FIELDS = ["purchase", "freight", "labor", "box", "storageRate", "handling", "grace", "freeze"];
 
   function fmt(n, digits) {
@@ -754,6 +771,9 @@
         showError(e.message);
         $("breakevenLine").textContent = "";
         $("holdingNoteLine").textContent = "";
+        $("anchorBreakeven").textContent = "";
+        $("anchorTarget").textContent = "";
+        $("anchorInitial").textContent = "";
         return;
       }
       throw e;
@@ -771,10 +791,12 @@
     });
     if (breakevenPerKg === null) {
       $("breakevenLine").textContent = "参考: センターフィが100%以上のため損益分岐単価を計算できません";
+      $("anchorBreakeven").textContent = "";
     } else {
       const breakevenDisplay = convertFromPerKg(breakevenPerKg, displayUnit, costs.bagKg, costs.caseKg);
       $("breakevenLine").textContent = "参考: 損益分岐単価 " + fmt(breakevenPerKg, 2) + " 円/kg（" +
         fmt(breakevenDisplay, 2) + " 円/" + displayLabel + " 相当）";
+      $("anchorBreakeven").textContent = "損益分岐 " + fmt(breakevenDisplay, 0) + "円/" + displayLabel;
     }
 
     const refTable = referencePriceTable({
@@ -809,6 +831,8 @@
       });
       if (minPricePerKg === null) {
         $("targetRateLine").textContent = "目標利益率が高すぎて計算できません（センターフィ%との合計が100%以上）";
+        $("anchorTarget").textContent = "";
+        $("anchorInitial").textContent = "";
       } else {
         const minPriceDisplay = convertFromPerKg(minPricePerKg, displayUnit, costs.bagKg, costs.caseKg);
         const room = start - minPriceDisplay;
@@ -817,9 +841,28 @@
           : "開始単価では目標利益率に届いていません";
         $("targetRateLine").textContent = "目標" + targetRatePct.toFixed(1) + "%を守れる最低単価: " +
           fmt(minPriceDisplay, 2) + " 円/" + displayLabel + "（" + roomText + "）";
+        $("anchorTarget").textContent = "目標" + targetRatePct.toFixed(0) + "% " + fmt(minPriceDisplay, 0) + "円/" + displayLabel;
+
+        let anchorMarginPct;
+        try { anchorMarginPct = parseNumber($("anchorMargin").value, "初期提示上乗せ"); } catch (e2) { anchorMarginPct = 0; }
+        const anchorPerKg = sellPriceForTargetRate({
+          purchase: costs.purchase, freight: costs.freight, labor: costs.labor, box: costs.box,
+          centerFeePct: costs.centerFeePct, handling: costs.handling, grace: costs.grace,
+          freeze: costs.freeze, storage: storage, targetRate: targetRatePct / 100 + anchorMarginPct / 100,
+        });
+        if (anchorPerKg === null) {
+          $("anchorInitial").textContent = "";
+        } else {
+          const anchorDisplay = convertFromPerKg(anchorPerKg, displayUnit, costs.bagKg, costs.caseKg);
+          $("anchorInitial").textContent = "初期提示 " + fmt(anchorDisplay, 0) + "円/" + displayLabel;
+        }
       }
     } catch (e) {
-      if (e instanceof InputError) { $("targetRateLine").textContent = ""; } else { throw e; }
+      if (e instanceof InputError) {
+        $("targetRateLine").textContent = "";
+        $("anchorTarget").textContent = "";
+        $("anchorInitial").textContent = "";
+      } else { throw e; }
     }
 
     let caseCount;
@@ -947,8 +990,8 @@
     loadSettings();
     recalculate();
 
-    // Service Workerを登録し、1回ネットで開けば以降は電波が無くても起動できるようにする。
-    // file://直接開いた場合は登録自体が失敗するだけなので、そのままフォールバックして問題ない。
+    // service worker はサーバー配信時(http/https)のみ有効化を試みる。
+    // file:// 直接開いた場合は静かにスキップする(機能上は無くても常に動く)。
     if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
       navigator.serviceWorker.register("./sw.js").catch(() => { /* オフライン化なしでも動作は継続する */ });
     }
