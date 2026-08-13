@@ -960,8 +960,38 @@
     $("caseMode").addEventListener("change", () => { onCaseModeChange(); recalculate(); });
   }
 
+  // キーボード操作導線: Enterキー(ソフトキーボードの"次へ"含む)で次の入力欄へ進む。
+  // 表示されていないフィールド(換算モードで隠れている方など)はスキップする。
+  const ENTER_NAV_ORDER = [
+    "caseKgDirect", "bagKg", "caseBags",
+    "purchaseValue", "freightValue", "laborValue", "boxValue", "centerFee",
+    "storageRateValue", "handlingValue", "graceValue", "freezeValue", "holdingMonths",
+    "startPrice", "priceStep", "targetRate", "anchorMargin", "caseCount",
+  ];
+
+  function visibleNavElements() {
+    return ENTER_NAV_ORDER.map((id) => $(id)).filter((el) => el && el.offsetParent !== null);
+  }
+
+  function attachEnterNavigation() {
+    ENTER_NAV_ORDER.forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.setAttribute("enterkeyhint", "next");
+      el.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        const els = visibleNavElements();
+        const idx = els.indexOf(el);
+        if (idx === -1) return;
+        els[(idx + 1) % els.length].focus();
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     attachRecalcListeners();
+    attachEnterNavigation();
     $("clearBtn").addEventListener("click", onClear);
     $("saveRecordBtn").addEventListener("click", onSaveRecord);
     $("deleteRecordBtn").addEventListener("click", onDeleteRecord);
