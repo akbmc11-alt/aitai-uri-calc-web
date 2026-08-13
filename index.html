@@ -67,6 +67,20 @@
   .btn-danger { background: #e53935; color: #fff; }
   .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   .btn-row .btn { flex: 1 1 auto; }
+  .card-title-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .card-title-row h2 { margin: 0; }
+  .btn-small { min-height: 32px; padding: 6px 10px; font-size: 12.5px; flex: 0 0 auto; }
+  .print-only { display: none; }
+  @media print {
+    body * { visibility: hidden; }
+    #printView, #printView * { visibility: visible; }
+    #printView { display: block; position: absolute; left: 0; top: 0; width: 100%; padding: 12mm; }
+    #printView table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    #printView th, #printView td { border: 1px solid #999; padding: 5px 8px; text-align: right; }
+    #printView th { background: #eee; }
+    #printView h1 { font-size: 16px; margin: 0 0 4px; }
+    #printView p { font-size: 11px; color: #555; margin: 0 0 2px; }
+  }
   .result-line { font-size: 13.5px; color: #333; margin: 6px 0 0; line-height: 1.5; }
   .result-line.warn { color: #b45309; }
   .anchor-row { display: flex; flex-wrap: wrap; gap: 8px 14px; }
@@ -341,10 +355,18 @@
   </div>
 
   <div class="card">
-    <h2>単価別 利益一覧（15件）</h2>
+    <div class="card-title-row">
+      <h2>単価別 利益一覧（15件）</h2>
+      <div class="btn-row" style="margin-top:0;">
+        <button class="btn btn-neutral btn-small" id="csvExportBtn">CSV出力</button>
+        <button class="btn btn-neutral btn-small" id="pdfExportBtn">PDF出力</button>
+      </div>
+    </div>
     <div id="priceList"></div>
   </div>
 </div>
+
+<div id="printView" class="print-only"></div>
 
 <div id="toast" class="toast"></div>
 
@@ -628,6 +650,67 @@
   // ------------------------------------------------------------------
   // データの書き出し・読み込み(デスクトップ版とのファイル経由の手動同期)
   // ------------------------------------------------------------------
+  // 単価別 利益一覧のCSV/PDF出力（交渉相手への配布・LINE送付用）。PDFはライブラリを使わず、
+  // 印刷専用ビューを組み立ててブラウザの「印刷→PDFに保存」機能に任せる(サーバー不要の方針を維持)。
+  let lastExportRows = [];
+  let lastExportMeta = { displayLabel: "kg", showTotals: false };
+
+  function exportFilenameStub() {
+    const name = ($("recordName").value || "").trim();
+    const condition = ($("recordCondition").value || "").trim();
+    let label = name ? (name + (condition ? "_" + condition : "")) : "単価シミュレーション";
+    label = label.replace(/[\\/:*?"<>|]/g, "");
+    return label || "単価シミュレーション";
+  }
+
+  function onExportCsv() {
+    if (!lastExportRows.length) { showToast("出力するデータがありません"); return; }
+    const headers = ["単価(円/" + lastExportMeta.displayLabel + ")", "利益額(円)", "利益率(%)"];
+    if (lastExportMeta.showTotals) headers.push("総売上(円)", "総利益(円)");
+    const lines = [headers.join(",")];
+    lastExportRows.forEach((row) => {
+      const cols = [row.price.toFixed(2), row.profit.toFixed(2), row.rate === null ? "" : (row.rate * 100).toFixed(1)];
+      if (lastExportMeta.showTotals) cols.push(Math.round(row.totalRevenue), Math.round(row.totalProfit));
+      lines.push(cols.join(","));
+    });
+    const csv = "﻿" + lines.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = exportFilenameStub() + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("CSVを書き出しました");
+  }
+
+  function onExportPdf() {
+    if (!lastExportRows.length) { showToast("出力するデータがありません"); return; }
+    const name = ($("recordName").value || "").trim();
+    const condition = ($("recordCondition").value || "").trim();
+    const subtitleParts = [];
+    if (name) subtitleParts.push("品名: " + name);
+    if (condition) subtitleParts.push("条件: " + condition);
+    const generatedAt = "作成日: " + new Date().toLocaleString("ja-JP", { hour12: false });
+
+    const headers = ["単価(円/" + lastExportMeta.displayLabel + ")", "利益額(円)", "利益率"];
+    if (lastExportMeta.showTotals) headers.push("総売上(円)", "総利益(円)");
+    let html = "<h1>単価別 利益シミュレーション</h1>";
+    if (subtitleParts.length) html += "<p>" + subtitleParts.join("　") + "</p>";
+    html += "<p>" + generatedAt + "</p>";
+    html += "<table><thead><tr>" + headers.map((h) => "<th>" + h + "</th>").join("") + "</tr></thead><tbody>";
+    lastExportRows.forEach((row) => {
+      const cols = [fmt(row.price, 2), fmt(row.profit, 2), row.rate === null ? "---" : (row.rate * 100).toFixed(1) + " %"];
+      if (lastExportMeta.showTotals) cols.push(fmt(row.totalRevenue, 0), fmt(row.totalProfit, 0));
+      html += "<tr>" + cols.map((c) => "<td>" + c + "</td>").join("") + "</tr>";
+    });
+    html += "</tbody></table>";
+    $("printView").innerHTML = html;
+    window.print();
+  }
+
   function onExport() {
     const store = RelStore.loadStore();
     const blob = new Blob([JSON.stringify(store, null, 2)], { type: "application/json" });
@@ -870,6 +953,9 @@
     const showTotals = caseCount > 0 && costs.caseKg > 0;
     const totalKg = showTotals ? caseCount * costs.caseKg : 0;
 
+    lastExportMeta = { displayLabel: displayLabel, showTotals: showTotals };
+    lastExportRows = [];
+
     let holdingNoteSet = false;
     for (let i = 0; i < ROW_COUNT; i++) {
       const priceDisplay = start + step * i;
@@ -889,6 +975,12 @@
       });
       const profitDisplay = convertFromPerKg(result.profit, displayUnit, costs.bagKg, costs.caseKg);
       const rateText = result.profitRate === null ? "---" : (result.profitRate * 100).toFixed(1) + " %";
+
+      lastExportRows.push({
+        price: priceDisplay, profit: profitDisplay, rate: result.profitRate,
+        totalRevenue: showTotals ? pricePerKg * totalKg : null,
+        totalProfit: showTotals ? result.profit * totalKg : null,
+      });
 
       if (!holdingNoteSet) {
         holdingNoteSet = true;
@@ -1000,6 +1092,8 @@
     $("exportBtn").addEventListener("click", onExport);
     $("importBtn").addEventListener("click", () => $("importFile").click());
     $("importFile").addEventListener("change", onImportFileChosen);
+    $("csvExportBtn").addEventListener("click", onExportCsv);
+    $("pdfExportBtn").addEventListener("click", onExportPdf);
 
     ["wcDeclaredKg", "wcQuotedPrice", "wcActualKg"].forEach((id) => {
       $(id).addEventListener("input", updateWeightCorrection);
